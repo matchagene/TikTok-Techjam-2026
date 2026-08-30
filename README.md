@@ -52,6 +52,40 @@ To bypass local storage bottlenecks, fetch an optimized streaming subset of the 
 ```python
 from datasets import load_dataset
 # Set up streaming data pipes to populate data/train and data/val splits
+import os
+
+print("Loading dataset structure...")
+# streaming=True means it doesn't download the whole dataset to your disk at once
+dataset = load_dataset("saberzl/SID_Set", streaming=True)
+
+# Create local directories for a solid baseline subset (e.g., 5000 images)
+os.makedirs("data/train/real", exist_ok=True)
+os.makedirs("data/train/fake", exist_ok=True)
+os.makedirs("data/val/real", exist_ok=True)
+os.makedirs("data/val/fake", exist_ok=True)
+
+# Let's pull a clean subset to save disk space
+# Adjust limits if you want more or fewer images
+train_limit = 2500
+val_limit = 500
+
+print("Downloading a optimized subset to disk...")
+for i, sample in enumerate(dataset['train']):
+    if i >= train_limit:
+        break
+    # Check your dataset's specific column names, usually 'image' and 'label'
+    img = sample['image'] 
+    label = 'real' if sample['label'] == 0 else 'fake'
+    img.save(f"data/train/{label}/{i}.jpg")
+
+for i, sample in enumerate(dataset['validation'] if 'validation' in dataset else dataset['test']):
+    if i >= val_limit:
+        break
+    img = sample['image']
+    label = 'real' if sample['label'] == 0 else 'fake'
+    img.save(f"data/val/{label}/{i}.jpg")
+
+print("Done! Check your data folder now.")
 ```
 
 ### 3. Launch Training
