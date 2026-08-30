@@ -1,1 +1,14 @@
 models/*.pth
+
+# Local Python environment
+.venv/
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Test caches
+.pytest_cache/
+
+# macOS
+.DS_Store
