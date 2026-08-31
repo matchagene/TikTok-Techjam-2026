@@ -1,0 +1,16 @@
+{
+  "dataset_name": "saberzl/SID_Set",
+  "seed": 42,
+  "sampling_strategy": "bounded_sequential_reservoir",
+  "sampling_pool_per_class": 1500,
+  "train_per_class": 1250,
+  "validation_per_class": 250,
+  "test_per_class": 250,
+  "sid_label_mapping": {
+    "0": "real",
+    "1": "full_synthetic",
+    "2": "excluded_tampered"
+  },
+  "cross_split_id_exclusion": true,
+  "train_ids_excluded_from_validation_source": 2500
+}
