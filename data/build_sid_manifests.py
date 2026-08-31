@@ -1,9 +1,11 @@
 """Build deterministic, balanced SID-Set manifests and lossless PNG cache.
 
-This script intentionally excludes SID label 2 (tampered). It samples class
-quotas from shuffled *official* train/validation splits instead of taking the
-first N streaming records, then splits the official validation pool into a
-model-development validation set and a held-out internal test set.
+This script intentionally excludes SID label 2 (tampered). It streams the
+official train/validation splits sequentially, builds a bounded per-class
+candidate pool, and applies seeded reservoir sampling locally. This avoids
+network-hostile remote streaming shuffle while also avoiding naive first-N
+selection. The official validation pool is then split into a model-development
+validation set and a held-out internal test set.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping, Sequence
@@ -28,7 +31,7 @@ class ManifestBuildConfig:
     validation_per_class: int = 250
     test_per_class: int = 250
     seed: int = 42
-    shuffle_buffer_size: int = 10_000
+    sampling_pool_per_class: int = 10_000
     cache_root: Path = Path("data/cache/sid")
     manifests_dir: Path = Path("data/manifests")
 
@@ -37,8 +40,19 @@ class ManifestBuildConfig:
             value = getattr(self, name)
             if value <= 0:
                 raise ValueError(f"{name} must be > 0, got {value}")
-        if self.shuffle_buffer_size <= 0:
-            raise ValueError("shuffle_buffer_size must be > 0")
+        if self.sampling_pool_per_class <= 0:
+            raise ValueError("sampling_pool_per_class must be > 0")
+
+        required_per_class = max(
+            self.train_per_class,
+            self.validation_per_class + self.test_per_class,
+        )
+        if self.sampling_pool_per_class < required_per_class:
+            raise ValueError(
+                "sampling_pool_per_class must be >= the largest requested "
+                f"per-class quota ({required_per_class}), "
+                f"got {self.sampling_pool_per_class}"
+            )
         if self.seed < 0:
             raise ValueError("seed must be non-negative")
 
@@ -119,6 +133,93 @@ def collect_balanced(
             "Could not satisfy balanced quota. "
             f"Requested {per_class}/class, collected {counts}."
         )
+    return selected
+
+
+def sample_balanced_reservoir(
+    stream: Iterable[Mapping[str, Any]],
+    *,
+    per_class: int,
+    candidate_pool_per_class: int,
+    seed: int,
+) -> list[Mapping[str, Any]]:
+    """Sample reproducibly from a bounded sequential candidate pool.
+
+    For each binary class, inspect the first ``candidate_pool_per_class``
+    unique eligible samples encountered in stream order. Reservoir sampling
+    then retains a uniform sample of ``per_class`` items from that candidate
+    pool.
+
+    This avoids Hugging Face streaming ``shuffle()``, which can jump between
+    many remote parquet shards, while also avoiding naive first-N selection.
+    Only ``per_class`` samples per class are retained in memory.
+    """
+
+    if per_class <= 0:
+        raise ValueError("per_class must be > 0")
+    if candidate_pool_per_class < per_class:
+        raise ValueError(
+            "candidate_pool_per_class must be >= per_class, "
+            f"got {candidate_pool_per_class} < {per_class}"
+        )
+    if seed < 0:
+        raise ValueError("seed must be non-negative")
+
+    reservoirs: dict[int, list[Mapping[str, Any]]] = {0: [], 1: []}
+    seen_counts = {0: 0, 1: 0}
+    seen_ids: set[str] = set()
+    rngs = {
+        0: random.Random(seed),
+        1: random.Random(seed + 1),
+    }
+
+    for sample in stream:
+        required = {"img_id", "label"}
+        missing = required.difference(sample)
+        if missing:
+            raise KeyError(f"SID sample missing fields: {sorted(missing)}")
+
+        sid_label = int(sample["label"])
+        binary_label = sid_to_binary_label(sid_label)
+        if sid_label == SID_TAMPERED_LABEL or binary_label is None:
+            continue
+
+        image_id = str(sample["img_id"])
+        if not image_id:
+            raise ValueError("SID sample has empty img_id")
+
+        if image_id in seen_ids:
+            continue
+        if seen_counts[binary_label] >= candidate_pool_per_class:
+            continue
+
+        seen_ids.add(image_id)
+        seen_counts[binary_label] += 1
+        class_seen = seen_counts[binary_label]
+        reservoir = reservoirs[binary_label]
+
+        if len(reservoir) < per_class:
+            reservoir.append(sample)
+        else:
+            replacement_index = rngs[binary_label].randrange(class_seen)
+            if replacement_index < per_class:
+                reservoir[replacement_index] = sample
+
+        if (
+            seen_counts[0] >= candidate_pool_per_class
+            and seen_counts[1] >= candidate_pool_per_class
+        ):
+            break
+
+    expected = {0: candidate_pool_per_class, 1: candidate_pool_per_class}
+    if seen_counts != expected:
+        raise RuntimeError(
+            "Could not build the requested candidate pool. "
+            f"Requested {expected}, observed {seen_counts}."
+        )
+
+    selected = reservoirs[0] + reservoirs[1]
+    random.Random(seed + 2).shuffle(selected)
     return selected
 
 
@@ -234,17 +335,17 @@ def build_manifests(config: ManifestBuildConfig, *, project_root: Path | None = 
         raise KeyError(f"Dataset has no train split; available: {sorted(dataset.keys())}")
     val_name = _choose_validation_split_name(dataset)
 
-    train_stream = dataset["train"].shuffle(
-        seed=config.seed, buffer_size=config.shuffle_buffer_size
+    train_samples = sample_balanced_reservoir(
+        dataset["train"],
+        per_class=config.train_per_class,
+        candidate_pool_per_class=config.sampling_pool_per_class,
+        seed=config.seed,
     )
-    val_stream = dataset[val_name].shuffle(
-        seed=config.seed + 1, buffer_size=config.shuffle_buffer_size
-    )
-
-    train_samples = collect_balanced(train_stream, per_class=config.train_per_class)
-    val_test_pool = collect_balanced(
-        val_stream,
+    val_test_pool = sample_balanced_reservoir(
+        dataset[val_name],
         per_class=config.validation_per_class + config.test_per_class,
+        candidate_pool_per_class=config.sampling_pool_per_class,
+        seed=config.seed + 1,
     )
     val_samples, test_samples = split_balanced_validation_pool(
         val_test_pool,
@@ -281,7 +382,8 @@ def build_manifests(config: ManifestBuildConfig, *, project_root: Path | None = 
     build_meta = {
         "dataset_name": config.dataset_name,
         "seed": config.seed,
-        "shuffle_buffer_size": config.shuffle_buffer_size,
+        "sampling_strategy": "bounded_sequential_reservoir",
+        "sampling_pool_per_class": config.sampling_pool_per_class,
         "train_per_class": config.train_per_class,
         "validation_per_class": config.validation_per_class,
         "test_per_class": config.test_per_class,
@@ -299,7 +401,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--validation-per-class", type=int, default=250)
     parser.add_argument("--test-per-class", type=int, default=250)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--shuffle-buffer-size", type=int, default=10_000)
+    parser.add_argument("--sampling-pool-per-class", type=int, default=10_000)
     parser.add_argument("--cache-root", type=Path, default=Path("data/cache/sid"))
     parser.add_argument("--manifests-dir", type=Path, default=Path("data/manifests"))
     return parser.parse_args()
@@ -313,7 +415,7 @@ def main() -> None:
         validation_per_class=args.validation_per_class,
         test_per_class=args.test_per_class,
         seed=args.seed,
-        shuffle_buffer_size=args.shuffle_buffer_size,
+        sampling_pool_per_class=args.sampling_pool_per_class,
         cache_root=args.cache_root,
         manifests_dir=args.manifests_dir,
     )
