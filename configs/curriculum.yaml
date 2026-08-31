@@ -1,0 +1,21 @@
+# Our progressive M4 adaptation: inspired by difficulty-structured NTIRE
+# approaches, not copied as an epoch-by-epoch schedule from any winning team.
+curriculum:
+  early:
+    progress: [0.00, 0.3333333333]
+    weights:
+      mild: 0.80
+      medium: 0.20
+      severe: 0.00
+  middle:
+    progress: [0.3333333333, 0.6666666667]
+    weights:
+      mild: 0.35
+      medium: 0.50
+      severe: 0.15
+  late:
+    progress: [0.6666666667, 1.00]
+    weights:
+      mild: 0.20
+      medium: 0.45
+      severe: 0.35
