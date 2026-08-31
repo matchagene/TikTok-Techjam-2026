@@ -26,9 +26,30 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from data.preprocessing import get_dinov2_preprocess
+from data.preprocessing import DINOV2_INPUT_SIZE, get_dinov2_preprocess
 from data.sid_dataset import SIDManifestDataset, SIDPreprocessedDataset
 from models.baseline import DINOBaseline
+
+
+def validate_config(config: dict[str, Any]) -> None:
+    model_cfg = config.get("model")
+    if not isinstance(model_cfg, dict):
+        raise ValueError("Config must contain a model mapping")
+
+    input_size = int(model_cfg.get("input_size", -1))
+    if input_size != DINOV2_INPUT_SIZE:
+        raise ValueError(
+            f"M1 input_size must match canonical DINOv2 preprocessing "
+            f"({DINOV2_INPUT_SIZE}), got {input_size}"
+        )
+
+    hidden_dim = int(model_cfg.get("hidden_dim", 0))
+    if hidden_dim <= 0:
+        raise ValueError("model.hidden_dim must be > 0")
+
+    dropout = float(model_cfg.get("dropout", -1.0))
+    if not 0.0 <= dropout < 1.0:
+        raise ValueError("model.dropout must lie in [0, 1)")
 
 
 def load_config(path: Path) -> dict[str, Any]:
@@ -36,6 +57,7 @@ def load_config(path: Path) -> dict[str, Any]:
         config = yaml.safe_load(handle)
     if not isinstance(config, dict):
         raise ValueError(f"Config must contain a mapping: {path}")
+    validate_config(config)
     return config
 
 
@@ -246,6 +268,8 @@ def train(config_path: Path) -> None:
     model = DINOBaseline(
         model_name=model_cfg["name"],
         freeze_backbone=bool(model_cfg["freeze_backbone"]),
+        hidden_dim=int(model_cfg["hidden_dim"]),
+        dropout=float(model_cfg["dropout"]),
     ).to(device)
     criterion = nn.BCEWithLogitsLoss()
     trainable = [parameter for parameter in model.parameters() if parameter.requires_grad]
