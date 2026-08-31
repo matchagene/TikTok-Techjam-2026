@@ -7,3 +7,5 @@ datasets
 PyYAML
 Pillow
 tqdm
+numpy
+pytest
