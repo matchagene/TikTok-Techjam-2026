@@ -117,7 +117,10 @@ class RobustDINODetector(nn.Module):
         """
 
         if isinstance(checkpoint, (str, Path)):
-            state: Any = torch.load(checkpoint, map_location="cpu", weights_only=True)
+            try:
+                state: Any = torch.load(checkpoint, map_location="cpu", weights_only=True)
+            except TypeError:  # PyTorch < 2.0 compatibility
+                state = torch.load(checkpoint, map_location="cpu")
         else:
             state = checkpoint
         if isinstance(state, Mapping) and "model_state_dict" in state:

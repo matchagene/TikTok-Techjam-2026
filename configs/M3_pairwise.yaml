@@ -1,0 +1,37 @@
+experiment:
+  model_id: M3
+  name: pairwise_consistency
+  seed: 42
+
+data:
+  train_manifest: data/manifests/sid_train.csv
+  val_manifest: data/manifests/sid_val.csv
+  test_manifest: data/manifests/sid_test.csv
+model:
+  name: vit_base_patch14_dinov2.lvd142m
+  freeze_backbone: true
+  hidden_dim: 256
+  dropout: 0.3
+  initialize_from_m1: checkpoints/M1_corrected_baseline.pth
+  unfreeze_last_blocks: 0
+training:
+  pair_mode: fixed
+  augmentation_config: configs/augmentation_train.yaml
+  curriculum_config: null
+  epochs: 5
+  batch_size: 16
+  eval_batch_size: 32
+  num_workers: 4
+  pin_memory: true
+  head_learning_rate: 0.0003
+  backbone_learning_rate: 0.00001
+  weight_decay: 0.0001
+  grad_clip_norm: 5.0
+loss:
+  # TeleAI-inspired starting weights from the NTIRE challenge report.
+  lambda_pred: 0.5
+  lambda_repr: 0.25
+output:
+  checkpoint: checkpoints/M3_pairwise.pth
+  metadata: checkpoints/M3_pairwise.meta.json
+  history: results/training/M3_history.csv
