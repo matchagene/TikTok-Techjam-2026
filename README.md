@@ -187,13 +187,13 @@ The project does not use directory names as the source of truth for labels and d
 
 `data/build_sid_manifests.py`:
 
-1. loads the official SID train/validation streams;
-2. shuffles them deterministically;
-3. excludes label `2`;
-4. samples balanced real/fake class quotas;
+1. loads the official SID train/validation streams sequentially;
+2. excludes label `2`;
+3. builds a bounded candidate pool independently for each binary class;
+4. applies seeded reservoir sampling locally to obtain reproducible balanced real/fake quotas without network-hostile remote stream shuffling;
 5. uses official train data for training;
-6. deterministically divides the official validation pool into development-validation and held-out internal-test subsets;
-7. caches decoded images as **PNG** to avoid introducing an uncontrolled JPEG transformation;
+6. deterministically divides the sampled official validation pool into development-validation and held-out internal-test subsets;
+7. caches selected decoded images as **PNG** to avoid introducing an uncontrolled JPEG transformation;
 8. saves the selected image IDs and labels in manifests.
 
 Default sample sizes are configurable and currently set to:
@@ -549,7 +549,6 @@ This allows metrics and figures to be recomputed without rerunning expensive inf
 │   └── robust_detector.py
 │
 ├── training/
-│   ├── train_baseline.py              # legacy M0 training
 │   ├── train_corrected_baseline.py    # M1
 │   ├── paired_dataset.py
 │   ├── pairwise_engine.py
@@ -624,13 +623,13 @@ Run commands from the repository root.
 ### Step 1 — Build deterministic SID manifests
 
 ```bash
-python data/build_sid_manifests.py
+python -m data.build_sid_manifests
 ```
 
 To change the hackathon-scale subset:
 
 ```bash
-python data/build_sid_manifests.py \
+python -m data.build_sid_manifests \
   --train-per-class 2500 \
   --validation-per-class 500 \
   --test-per-class 500 \
@@ -655,7 +654,7 @@ data/cache/sid/
 ### Step 2 — Validate data before training
 
 ```bash
-python data/validate_manifests.py
+python -m data.validate_manifests
 ```
 
 This should report balanced counts and fail loudly if there is leakage, an invalid label, or a missing/unreadable cache file.
@@ -663,13 +662,13 @@ This should report balanced counts and fail loudly if there is leakage, an inval
 ### Step 3 — Train M1 corrected baseline
 
 ```bash
-python training/train_corrected_baseline.py
+python -m training.train_corrected_baseline
 ```
 
 or explicitly:
 
 ```bash
-python training/train_corrected_baseline.py \
+python -m training.train_corrected_baseline \
   --config configs/corrected_baseline.yaml
 ```
 
@@ -689,7 +688,7 @@ results/training/M1_history.csv
 M2 initializes compatible head weights from M1 by default, so the M1 checkpoint must exist.
 
 ```bash
-python training/train_augmented.py
+python -m training.train_augmented
 ```
 
 Expected:
@@ -703,7 +702,7 @@ results/training/M2_history.csv
 ### Step 5 — Train M3 pairwise-consistency model
 
 ```bash
-python training/train_pairwise.py
+python -m training.train_pairwise
 ```
 
 Expected:
@@ -717,7 +716,7 @@ results/training/M3_history.csv
 ### Step 6 — Train M4 progressive-curriculum model
 
 ```bash
-python training/train_curriculum.py
+python -m training.train_curriculum
 ```
 
 Expected:
@@ -737,7 +736,7 @@ results/training/M4_history.csv
 Example for M3:
 
 ```bash
-python evaluation/evaluate_clean.py \
+python -m evaluation.evaluate_clean \
   --model-id M3 \
   --checkpoint checkpoints/M3_pairwise.pth \
   --manifest data/manifests/sid_test.csv
@@ -746,7 +745,7 @@ python evaluation/evaluate_clean.py \
 ### Full robustness benchmark
 
 ```bash
-python evaluation/evaluate_robustness.py \
+python -m evaluation.evaluate_robustness \
   --model-id M3 \
   --checkpoint checkpoints/M3_pairwise.pth \
   --manifest data/manifests/sid_test.csv
