@@ -84,19 +84,27 @@ The project deliberately uses a **controlled model ladder** instead of comparing
 |---|---|---|
 | **M0 — Original Baseline** | Historical DINOv2 baseline from the original repository | Historical reference only |
 | **M1 — Corrected Baseline** | Same DINOv2-style detector under a corrected binary data protocol | Effect of fixing the experimental protocol |
-| **M2 — Augmented** | Clean/corrupt paired training using classification loss only | **M1 → M2:** effect of robustness augmentation |
+| **M2 — Robust Fine-Tuned** | M1-initialized clean/corrupt paired classification fine-tuning | **M1 → M2:** effect of a dedicated robustness fine-tuning stage |
 | **M3 — Pairwise** | M2 + prediction consistency + representation consistency | **M2 → M3:** effect of explicit consistency learning |
 | **M4 — Curriculum** | M3 + progressive mild/medium/severe corruption schedule | **M3 → M4:** effect of difficulty progression |
 
 The controlled ablation is critical:
 
 ```text
-M1 → M2 : robust augmentation changes
+M1 → M2 : dedicated robustness fine-tuning stage
 M2 → M3 : only consistency losses change
 M3 → M4 : only corruption-difficulty schedule changes
 ```
 
 Everything else should remain as comparable as practical.
+
+**Interpretation of M1 → M2.** M2 starts from the selected M1 checkpoint and
+receives an additional five-epoch training stage with clean/corrupt paired
+classification, a smaller batch size, and a lower head learning rate. Therefore
+M1 → M2 is **not** claimed as a pure augmentation-only ablation. It measures the
+effect of the complete dedicated robustness fine-tuning stage. A continued-clean
+M1C control would be required to isolate augmentation from additional
+optimization time; that control is outside the primary hackathon experiment.
 
 ### Important note about M0
 
@@ -478,7 +486,7 @@ The primary ablation table is designed as:
 |---|---:|---:|---:|---:|---:|
 | M0 Original | TBD | TBD | TBD | TBD | TBD |
 | M1 Corrected | TBD | TBD | TBD | TBD | TBD |
-| M2 Augmented | TBD | TBD | TBD | TBD | TBD |
+| M2 Robust Fine-Tuned | TBD | TBD | TBD | TBD | TBD |
 | M3 Pairwise | TBD | TBD | TBD | TBD | TBD |
 | M4 Curriculum | TBD | TBD | TBD | TBD | TBD |
 
@@ -947,7 +955,7 @@ The project is successful if it can demonstrate, with controlled evidence, that:
 
 ```text
 M1 → M2
-robust augmentation improves transformed-image performance
+a dedicated clean/corrupt robustness fine-tuning stage improves transformed-image performance
 
 M2 → M3
 explicit clean/corrupt consistency adds robustness beyond augmentation alone
