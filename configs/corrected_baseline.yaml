@@ -1,0 +1,30 @@
+experiment:
+  model_id: M1
+  name: corrected_clean_baseline
+  seed: 42
+
+data:
+  train_manifest: data/manifests/sid_train.csv
+  val_manifest: data/manifests/sid_val.csv
+  test_manifest: data/manifests/sid_test.csv
+
+model:
+  name: vit_base_patch14_dinov2.lvd142m
+  freeze_backbone: true
+  input_size: 518
+  hidden_dim: 256
+  dropout: 0.3
+
+training:
+  epochs: 5
+  batch_size: 64
+  num_workers: 4
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  pin_memory: true
+
+output:
+  checkpoint: checkpoints/M1_corrected_baseline.pth
+  metadata: checkpoints/M1_corrected_baseline.meta.json
+  clean_metrics: results/baseline/M1_clean_metrics.csv
+  history: results/training/M1_history.csv

@@ -3,3 +3,7 @@ torchvision
 timm
 scikit-learn
 pandas
+datasets
+PyYAML
+Pillow
+tqdm
