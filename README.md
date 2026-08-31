@@ -691,7 +691,7 @@ results/baseline/M1_clean_metrics.csv
 results/training/M1_history.csv
 ```
 
-### Step 4 — Train M2 augmentation-only model
+### Step 4 — Train M2 robustness fine-tuning model
 
 M2 initializes compatible head weights from M1 by default, so the M1 checkpoint must exist.
 
@@ -735,9 +735,48 @@ checkpoints/M4_curriculum.meta.json
 results/training/M4_history.csv
 ```
 
+### Step 7 — Select M2/M3/M4 checkpoints on validation robustness
+
+Training retains every epoch checkpoint. The canonical checkpoint written during
+training is only a clean-validation fallback until robust selection is completed.
+
+For each M2/M3/M4 epoch, run the frozen robustness benchmark on
+`data/manifests/sid_val.csv`.
+
+Example for M2:
+
+```bash
+for epoch in 01 02 03 04 05; do
+  python -m evaluation.evaluate_robustness \
+    --model-id M2 \
+    --checkpoint checkpoints/M2_augmented_epoch${epoch}.pth \
+    --manifest data/manifests/sid_val.csv \
+    --dataset-name SID_dev_val
+done
+```
+
+Then select the canonical M2 checkpoint:
+
+```bash
+python -m evaluation.select_robust_checkpoint \
+  --config configs/M2_augmented.yaml
+```
+
+Repeat the same process for M3 and M4 using their corresponding epoch
+checkpoints and configs.
+
+Selection maximizes **SID validation robust pooled ROC-AUC**. Exact ties are
+broken by higher clean validation AUC, then by the earlier epoch. The selected
+epoch is copied to the canonical checkpoint path and recorded in metadata.
+
+`sid_test.csv` must not be used during checkpoint selection.
+
 ---
 
 ## 14. Evaluate a Model
+
+After robust checkpoint selection is complete, evaluate the frozen canonical
+models on the internal test split.
 
 ### Clean evaluation
 
@@ -901,7 +940,7 @@ It should **not** be described as an exact reproduction of any winning method.
 - [x] stochastic mild/medium/severe training corruption sampler;
 - [x] progressive difficulty scheduler;
 - [x] M1 corrected baseline trainer;
-- [x] M2 augmentation-only trainer;
+- [x] M2 robustness fine-tuning trainer;
 - [x] M3 prediction + representation consistency trainer;
 - [x] M4 curriculum trainer;
 - [x] clean and robustness evaluators;
