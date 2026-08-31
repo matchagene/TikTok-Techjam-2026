@@ -12,3 +12,12 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# Trained model checkpoints
+checkpoints/*.pth
+
+# Locally cached SID images
+data/cache/
+
+# Large raw evaluation predictions
+results/predictions/
