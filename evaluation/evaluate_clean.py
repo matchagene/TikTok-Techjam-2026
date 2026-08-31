@@ -36,7 +36,13 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps"
+        if torch.backends.mps.is_available()
+        else "cpu"
+    )
     adapter = load_adapter(args.model_id, args.checkpoint, device=device)
     base = SIDManifestDataset(args.manifest)
     clean_condition = (benchmark_conditions(include_clean=True)[0],)

@@ -243,7 +243,13 @@ def train(config_path: Path) -> None:
     seed = int(config["experiment"]["seed"])
     seed_everything(seed)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps"
+        if torch.backends.mps.is_available()
+        else "cpu"
+    )
     print(f"Using device: {device}")
 
     training_cfg = config["training"]

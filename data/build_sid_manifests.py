@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import random
 from dataclasses import dataclass
@@ -64,7 +65,15 @@ def _load_hf_streams(dataset_name: str):
         raise RuntimeError(
             "The 'datasets' package is required. Install project requirements first."
         ) from exc
-    return load_dataset(dataset_name, streaming=True)
+
+    dataset = load_dataset(dataset_name, streaming=True)
+
+    # Avoid eager PIL decoding while scanning candidate rows. The encoded
+    # image bytes are retained and only selected samples are decoded later.
+    return {
+        split_name: split.decode(False)
+        for split_name, split in dataset.items()
+    }
 
 
 def _choose_validation_split_name(dataset: Mapping[str, Any]) -> str:
@@ -76,7 +85,9 @@ def _choose_validation_split_name(dataset: Mapping[str, Any]) -> str:
     )
 
 
-def _validated_sample(sample: Mapping[str, Any]) -> tuple[str, Image.Image, int, int] | None:
+def _validated_sample(
+    sample: Mapping[str, Any],
+) -> tuple[str, Image.Image, int, int] | None:
     required = {"img_id", "image", "label"}
     missing = required.difference(sample)
     if missing:
@@ -86,15 +97,37 @@ def _validated_sample(sample: Mapping[str, Any]) -> tuple[str, Image.Image, int,
     binary_label = sid_to_binary_label(sid_label)
     if sid_label == SID_TAMPERED_LABEL:
         return None
-    if binary_label is None:  # defensive if mapping changes later
+    if binary_label is None:
         return None
 
     image_id = str(sample["img_id"])
     if not image_id:
         raise ValueError("SID sample has empty img_id")
-    image = sample["image"]
-    if not isinstance(image, Image.Image):
-        raise TypeError(f"SID sample {image_id} image is not a PIL image")
+
+    image_value = sample["image"]
+
+    if isinstance(image_value, Image.Image):
+        image = image_value
+    elif isinstance(image_value, Mapping):
+        raw_bytes = image_value.get("bytes")
+        raw_path = image_value.get("path")
+
+        if raw_bytes is not None:
+            with Image.open(io.BytesIO(raw_bytes)) as opened:
+                image = opened.copy()
+        elif raw_path:
+            with Image.open(raw_path) as opened:
+                image = opened.copy()
+        else:
+            raise TypeError(
+                f"SID sample {image_id} has no decodable image bytes or path"
+            )
+    else:
+        raise TypeError(
+            f"SID sample {image_id} has unsupported image type "
+            f"{type(image_value).__name__}"
+        )
+
     return image_id, image, sid_label, binary_label
 
 
@@ -142,6 +175,7 @@ def sample_balanced_reservoir(
     per_class: int,
     candidate_pool_per_class: int,
     seed: int,
+    excluded_ids: set[str] | None = None,
 ) -> list[Mapping[str, Any]]:
     """Sample reproducibly from a bounded sequential candidate pool.
 
@@ -168,6 +202,7 @@ def sample_balanced_reservoir(
     reservoirs: dict[int, list[Mapping[str, Any]]] = {0: [], 1: []}
     seen_counts = {0: 0, 1: 0}
     seen_ids: set[str] = set()
+    excluded = excluded_ids or set()
     rngs = {
         0: random.Random(seed),
         1: random.Random(seed + 1),
@@ -188,6 +223,8 @@ def sample_balanced_reservoir(
         if not image_id:
             raise ValueError("SID sample has empty img_id")
 
+        if image_id in excluded:
+            continue
         if image_id in seen_ids:
             continue
         if seen_counts[binary_label] >= candidate_pool_per_class:
@@ -335,24 +372,15 @@ def build_manifests(config: ManifestBuildConfig, *, project_root: Path | None = 
         raise KeyError(f"Dataset has no train split; available: {sorted(dataset.keys())}")
     val_name = _choose_validation_split_name(dataset)
 
+    print("Selecting train candidate pool...")
     train_samples = sample_balanced_reservoir(
         dataset["train"],
         per_class=config.train_per_class,
         candidate_pool_per_class=config.sampling_pool_per_class,
         seed=config.seed,
     )
-    val_test_pool = sample_balanced_reservoir(
-        dataset[val_name],
-        per_class=config.validation_per_class + config.test_per_class,
-        candidate_pool_per_class=config.sampling_pool_per_class,
-        seed=config.seed + 1,
-    )
-    val_samples, test_samples = split_balanced_validation_pool(
-        val_test_pool,
-        validation_per_class=config.validation_per_class,
-        test_per_class=config.test_per_class,
-    )
 
+    print(f"Selected {len(train_samples)} train samples; caching train images...")
     train_rows = cache_samples_and_build_rows(
         train_samples,
         manifest_split="train",
@@ -360,6 +388,32 @@ def build_manifests(config: ManifestBuildConfig, *, project_root: Path | None = 
         cache_root=cache_root,
         project_root=root,
     )
+    write_manifest(train_rows, manifests_dir / "sid_train.csv")
+
+    # SID's official train/validation sources can reuse img_id values.
+    # Explicitly exclude every fixed training ID from development/test sampling.
+    train_ids = {str(row["image_id"]) for row in train_rows}
+
+    # Release encoded train image payloads before scanning validation.
+    del train_samples
+    print("Train cache and manifest complete.")
+
+    print("Selecting validation/test candidate pool...")
+    val_test_pool = sample_balanced_reservoir(
+        dataset[val_name],
+        per_class=config.validation_per_class + config.test_per_class,
+        candidate_pool_per_class=config.sampling_pool_per_class,
+        seed=config.seed + 1,
+        excluded_ids=train_ids,
+    )
+    val_samples, test_samples = split_balanced_validation_pool(
+        val_test_pool,
+        validation_per_class=config.validation_per_class,
+        test_per_class=config.test_per_class,
+    )
+    del val_test_pool
+
+    print(f"Caching {len(val_samples)} validation samples...")
     val_rows = cache_samples_and_build_rows(
         val_samples,
         manifest_split="val",
@@ -367,6 +421,9 @@ def build_manifests(config: ManifestBuildConfig, *, project_root: Path | None = 
         cache_root=cache_root,
         project_root=root,
     )
+    del val_samples
+
+    print(f"Caching {len(test_samples)} test samples...")
     test_rows = cache_samples_and_build_rows(
         test_samples,
         manifest_split="test",
@@ -374,10 +431,11 @@ def build_manifests(config: ManifestBuildConfig, *, project_root: Path | None = 
         cache_root=cache_root,
         project_root=root,
     )
+    del test_samples
 
-    write_manifest(train_rows, manifests_dir / "sid_train.csv")
     write_manifest(val_rows, manifests_dir / "sid_val.csv")
     write_manifest(test_rows, manifests_dir / "sid_test.csv")
+    print("Validation/test cache and manifests complete.")
 
     build_meta = {
         "dataset_name": config.dataset_name,

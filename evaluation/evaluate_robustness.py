@@ -37,7 +37,13 @@ def main() -> None:
     if args.batch_size <= 0 or args.num_workers < 0:
         raise ValueError("batch-size must be >0 and num-workers must be >=0")
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps"
+        if torch.backends.mps.is_available()
+        else "cpu"
+    )
     print(f"{args.model_id}: evaluating on {device}")
     base = SIDManifestDataset(args.manifest)
     adapter = load_adapter(

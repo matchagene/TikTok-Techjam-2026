@@ -1,0 +1,4 @@
+split,real,fake,total
+train,1250,1250,2500
+val,250,250,500
+test,250,250,500

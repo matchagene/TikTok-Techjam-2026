@@ -458,7 +458,13 @@ def run(config_path: Path) -> None:
     seed = int(config["experiment"]["seed"])
     seed_everything(seed)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps"
+        if torch.backends.mps.is_available()
+        else "cpu"
+    )
     print(f"{model_id}: using device {device}")
     train_loader, paired_dataset = build_train_loader(config)
     val_loader = build_clean_val_loader(config)
