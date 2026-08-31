@@ -761,20 +761,37 @@ python -m evaluation.evaluate_robustness \
 
 Repeat the same benchmark for M0–M4 so every model is evaluated under identical deterministic corruption conditions.
 
-Typical outputs:
+### Evaluation run tags
+
+Evaluation outputs are scoped by a **run tag** so multiple checkpoints for the
+same model and dataset do not overwrite one another.
+
+By default, the run tag is the checkpoint filename stem. For example:
 
 ```text
-results/predictions/<MODEL_ID>/...
-results/evaluation/<MODEL_ID>_..._by_condition.csv
-results/evaluation/<MODEL_ID>_..._summary.csv
+checkpoints/M3_pairwise_epoch04.pth
+→ run tag: M3_pairwise_epoch04
 ```
+
+The corresponding robustness outputs are:
+
+```text
+results/predictions/M3/M3_pairwise_epoch04/SID_internal_test_robustness.csv
+results/evaluation/M3/M3_pairwise_epoch04/SID_internal_test_by_condition.csv
+results/evaluation/M3/M3_pairwise_epoch04/SID_internal_test_summary.csv
+```
+
+This allows every M2/M3/M4 epoch to be evaluated independently on
+`sid_val.csv` during robust checkpoint selection.
+
+An explicit run tag can also be supplied with `--run-tag selected_final`.
 
 ---
 
 ## 15. Run the Test Suite
 
 ```bash
-pytest -q
+python -m pytest -q
 ```
 
 The tests cover key research invariants including:

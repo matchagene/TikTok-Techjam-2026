@@ -10,6 +10,7 @@ import torch
 from data.preprocessing import get_dinov2_preprocess
 from data.sid_dataset import SIDManifestDataset
 from evaluation.model_loading import load_adapter
+from evaluation.output_paths import resolve_run_tag, robustness_output_paths
 from evaluation.robustness import run_benchmark, save_benchmark_outputs
 
 
@@ -23,6 +24,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--output-root", type=Path, default=Path("results"))
+    parser.add_argument(
+        "--run-tag",
+        default=None,
+        help="Optional output run identifier; defaults to checkpoint filename stem.",
+    )
     return parser.parse_args()
 
 
@@ -50,9 +56,13 @@ def main() -> None:
         num_workers=args.num_workers,
     )
 
-    predictions_path = args.output_root / "predictions" / args.model_id / f"{args.dataset_name}_robustness.csv"
-    by_condition_path = args.output_root / "evaluation" / f"{args.model_id}_{args.dataset_name}_by_condition.csv"
-    summary_path = args.output_root / "evaluation" / f"{args.model_id}_{args.dataset_name}_summary.csv"
+    run_tag = resolve_run_tag(args.checkpoint, args.run_tag)
+    predictions_path, by_condition_path, summary_path = robustness_output_paths(
+        output_root=args.output_root,
+        model_id=args.model_id,
+        run_tag=run_tag,
+        dataset_name=args.dataset_name,
+    )
     summary = save_benchmark_outputs(
         predictions,
         predictions_path=predictions_path,
