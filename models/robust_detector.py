@@ -104,10 +104,36 @@ class RobustDINODetector(nn.Module):
             )
 
         representation = self.projector(backbone_features)
-        logits = self.classifier(self.dropout(representation))
+        logits = self.classify_representation(representation, apply_dropout=True)
         if return_features:
             return logits, representation
         return logits
+
+    def classify_representation(
+        self,
+        representation: torch.Tensor,
+        *,
+        apply_dropout: bool = True,
+    ) -> torch.Tensor:
+        """Map a robust representation to the binary fake logit.
+
+        BCE training keeps the historical head dropout. Pairwise prediction
+        consistency must instead call this with ``apply_dropout=False`` so KL
+        measures transformation sensitivity rather than independent dropout
+        masks on the clean/corrupt samples.
+        """
+
+        if representation.ndim != 2 or representation.shape[1] != self.hidden_dim:
+            raise ValueError(
+                f"Expected representation [B, {self.hidden_dim}], got {tuple(representation.shape)}"
+            )
+        features = self.dropout(representation) if apply_dropout else representation
+        return self.classifier(features)
+
+    def consistency_logits(self, representation: torch.Tensor) -> torch.Tensor:
+        """Deterministic logits used only by the prediction-consistency term."""
+
+        return self.classify_representation(representation, apply_dropout=False)
 
     def initialize_head_from_m1(self, checkpoint: str | Path | Mapping[str, Any]) -> None:
         """Copy compatible M1 MLP head weights into projector/classifier.

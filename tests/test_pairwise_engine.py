@@ -1,6 +1,7 @@
 import unittest
 
 import torch
+import pytest
 import torch.nn as nn
 
 from models.robust_detector import RobustDINODetector
@@ -68,3 +69,21 @@ class PairwiseEngineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_prediction_consistency_ignores_head_dropout_noise():
+    model = RobustDINODetector(
+        backbone=TinyBackbone(), hidden_dim=8, dropout=0.9, freeze_backbone=True
+    )
+    model.train()
+    clean = torch.randn(8, 3, 8, 8)
+    batch = {"clean": clean, "corrupt": clean.clone(), "label": torch.tensor([0, 1] * 4)}
+    losses = compute_pairwise_batch_loss(
+        model,
+        batch,
+        device=torch.device("cpu"),
+        lambda_pred=0.5,
+        lambda_repr=0.25,
+    )
+    assert losses.prediction.item() == pytest.approx(0.0, abs=1e-7)
+    assert losses.representation.item() == pytest.approx(0.0, abs=1e-7)

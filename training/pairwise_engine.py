@@ -65,6 +65,16 @@ def compute_pairwise_batch_loss(
     clean_logits, corrupt_logits, clean_repr, corrupt_repr = paired_forward(
         model, clean, corrupt
     )
+    consistency_head = getattr(model, "consistency_logits", None)
+    if not callable(consistency_head):
+        raise TypeError(
+            "Robust pairwise model must expose consistency_logits(representation)"
+        )
+    # Classification keeps the configured head dropout, but KL uses the same
+    # classifier weights without dropout. Otherwise independent dropout masks
+    # create artificial clean/corrupt disagreement unrelated to transformations.
+    clean_consistency_logits = consistency_head(clean_repr)
+    corrupt_consistency_logits = consistency_head(corrupt_repr)
     return pairwise_training_loss(
         clean_logits=clean_logits,
         corrupt_logits=corrupt_logits,
@@ -72,6 +82,8 @@ def compute_pairwise_batch_loss(
         clean_representation=clean_repr,
         corrupt_representation=corrupt_repr,
         lambda_pred=lambda_pred,
+        clean_consistency_logits=clean_consistency_logits,
+        corrupt_consistency_logits=corrupt_consistency_logits,
         lambda_repr=lambda_repr,
     )
 

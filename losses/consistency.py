@@ -96,6 +96,8 @@ def pairwise_training_loss(
     corrupt_representation: torch.Tensor,
     lambda_pred: float,
     lambda_repr: float,
+    clean_consistency_logits: torch.Tensor | None = None,
+    corrupt_consistency_logits: torch.Tensor | None = None,
     eps: float = 1e-6,
 ) -> PairwiseLossOutput:
     """Compute the common M2/M3/M4 objective.
@@ -125,7 +127,13 @@ def pairwise_training_loss(
 
     # Always compute these for logging/diagnostics, even in M2. Multiplication
     # by zero makes the total objective exactly the classification objective.
-    prediction = binary_symmetric_kl(clean_logits, corrupt_logits, eps=eps)
+    if (clean_consistency_logits is None) != (corrupt_consistency_logits is None):
+        raise ValueError(
+            "clean_consistency_logits and corrupt_consistency_logits must be supplied together"
+        )
+    prediction_clean = clean_logits if clean_consistency_logits is None else clean_consistency_logits
+    prediction_corrupt = corrupt_logits if corrupt_consistency_logits is None else corrupt_consistency_logits
+    prediction = binary_symmetric_kl(prediction_clean, prediction_corrupt, eps=eps)
     representation = representation_mse(clean_representation, corrupt_representation)
     total = classification + float(lambda_pred) * prediction + float(lambda_repr) * representation
     return PairwiseLossOutput(
