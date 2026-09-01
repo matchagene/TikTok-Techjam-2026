@@ -586,7 +586,7 @@ cd TikTok-Techjam-2026
 
 ### 12.2 Create an environment
 
-Python 3.10+ is recommended.
+Python 3.9+ is supported. The school GPU cluster's Python 3.9 environment is an explicit compatibility target.
 
 ```bash
 python -m venv .venv
@@ -602,8 +602,32 @@ On Windows:
 ### 12.3 Install dependencies
 
 ```bash
-pip install --upgrade pip
-pip install -r requirements.txt
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+If you are using a managed school GPU node that already provides a working CUDA-enabled PyTorch installation, **do not replace that PyTorch build unnecessarily**. Verify it first:
+
+```bash
+python - <<'PY'
+import torch
+print(torch.__version__)
+print("CUDA available:", torch.cuda.is_available())
+if torch.cuda.is_available():
+    print(torch.cuda.get_device_name(0))
+PY
+```
+
+Then install the remaining Python 3.9 dependencies without reinstalling torch/torchvision:
+
+```bash
+python -m pip install -r requirements-school-py39.txt
+```
+
+You can also run the repository's static Python 3.9 compatibility guard:
+
+```bash
+python tools/check_python39_compat.py
 ```
 
 Core packages include:

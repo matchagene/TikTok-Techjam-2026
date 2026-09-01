@@ -7,10 +7,10 @@ responsibility of :func:`augmentations.composition.apply_pipeline`.
 from __future__ import annotations
 
 from types import MappingProxyType
-from typing import Final, Mapping, TypeAlias
+from typing import Final, Mapping, Union
 
 
-CompoundPolicy: TypeAlias = tuple[tuple[str, int | float], ...]
+CompoundPolicy = tuple[tuple[str, Union[int, float]], ...]
 
 COMPOUND_POLICIES: Final[Mapping[str, CompoundPolicy]] = MappingProxyType(
     {

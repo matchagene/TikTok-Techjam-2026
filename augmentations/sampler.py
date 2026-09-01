@@ -11,13 +11,13 @@ from __future__ import annotations
 import operator
 import random
 from types import MappingProxyType
-from typing import Final, Mapping, TypeAlias
+from typing import Final, Mapping
 
 from PIL import Image
 
 from .composition import PipelineStep, apply_pipeline
 
-Difficulty: TypeAlias = str
+Difficulty = str
 
 DIFFICULTIES: Final[tuple[Difficulty, ...]] = ("mild", "medium", "severe")
 

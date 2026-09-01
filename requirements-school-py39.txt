@@ -1,0 +1,19 @@
+# Python 3.9 dependencies for a managed GPU cluster that ALREADY provides
+# a working CUDA-enabled torch/torchvision installation.
+#
+# Verify torch first:
+#   python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+#
+# Then install this file rather than replacing the cluster's PyTorch build.
+
+numpy>=1.23.5,<2.0
+pandas>=1.5.3,<2.3
+Pillow>=9.5,<12
+PyYAML>=6.0,<7
+scikit-learn>=1.2,<1.6
+tqdm>=4.65,<5
+datasets>=2.18,<4
+timm>=0.9,<1.1
+plotly>=5.18,<6
+streamlit>=1.28,<1.45
+pytest>=7,<9

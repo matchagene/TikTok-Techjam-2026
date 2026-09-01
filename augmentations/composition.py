@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import operator
 from collections.abc import Sequence
-from typing import TypeAlias
+from typing import Optional, Union
 
 import numpy as np
 from PIL import Image
@@ -12,7 +12,7 @@ from PIL import Image
 from .transforms import apply_transform
 
 
-PipelineStep: TypeAlias = tuple[str, int | float | None]
+PipelineStep = tuple[str, Optional[Union[int, float]]]
 
 
 def apply_pipeline(
