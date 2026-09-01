@@ -11,6 +11,7 @@ class DINOBaseline(nn.Module):
         freeze_backbone=True,
         hidden_dim=256,
         dropout=0.3,
+        pretrained=True,
     ):
         super().__init__()
         if hidden_dim <= 0:
@@ -25,7 +26,7 @@ class DINOBaseline(nn.Module):
             raise RuntimeError(
                 "timm is required to construct the pretrained DINOv2 backbone"
             ) from exc
-        self.backbone = timm.create_model(model_name, pretrained=True, num_classes=0)
+        self.backbone = timm.create_model(model_name, pretrained=pretrained, num_classes=0)
         
         self._backbone_frozen = bool(freeze_backbone)
         if self._backbone_frozen:

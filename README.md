@@ -480,17 +480,16 @@ For each model we compute:
 4. **Worst-Case AUC** — minimum AUC across conditions.
 5. **Robustness Drop** — `Clean AUC - Pooled Robust AUC`; lower is better.
 
-The primary ablation table is designed as:
+The submission-critical comparison is the clean baseline against the proposed pairwise robust detector:
 
 | Model | Clean AUC | Robust Pooled AUC | Mean Condition AUC | Worst AUC | Robustness Drop |
 |---|---:|---:|---:|---:|---:|
-| M0 Original | TBD | TBD | TBD | TBD | TBD |
-| M1 Corrected | TBD | TBD | TBD | TBD | TBD |
-| M2 Robust Fine-Tuned | TBD | TBD | TBD | TBD | TBD |
-| M3 Pairwise | TBD | TBD | TBD | TBD | TBD |
-| M4 Curriculum | TBD | TBD | TBD | TBD | TBD |
+| M1 Clean Baseline | TBD | TBD | TBD | TBD | TBD |
+| M3 Pairwise Robust | TBD | TBD | TBD | TBD | TBD |
 
-**Do not replace `TBD` values with unverified numbers.** The controlled M1–M4 experiment should be run before publishing final claims.
+The repository still contains M2 and M4 as additional ablations, but they are not required to support the core hackathon claim when compute/time is limited. With only M1 and M3 trained, the defensible claim is that the **complete pairwise robustness training strategy** (corrupted paired views + prediction consistency + representation consistency) is compared against clean-only training. We do **not** attribute any observed gain specifically to augmentation, KL, or representation MSE without the missing intermediate ablations.
+
+**Do not replace `TBD` values with unverified numbers.** Populate this table only from saved evaluation outputs.
 
 ### Raw predictions first
 
@@ -547,7 +546,10 @@ This allows metrics and figures to be recomputed without rerunning expensive inf
 │   ├── model_loading.py
 │   ├── robustness.py
 │   ├── evaluate_clean.py
-│   └── evaluate_robustness.py
+│   ├── evaluate_robustness.py
+│   ├── build_submission_results.py
+│   ├── plot_submission_results.py
+│   └── error_analysis.py
 │
 ├── losses/
 │   └── consistency.py
@@ -568,6 +570,8 @@ This allows metrics and figures to be recomputed without rerunning expensive inf
 ├── tests/
 ├── checkpoints/               # checkpoints are not stored in normal Git
 ├── results/
+├── inference.py              # required directory -> JSON submission interface
+├── frontend/app.py            # real checkpoint-backed Streamlit demo
 ├── requirements.txt
 ├── pytest.ini
 └── README.md
@@ -654,19 +658,18 @@ Run commands from the repository root.
 
 ### Step 1 — Build deterministic SID manifests
 
-```bash
-python -m data.build_sid_manifests
-```
-
-To change the hackathon-scale subset:
+The submitted experiment used the following frozen subset definition:
 
 ```bash
 python -m data.build_sid_manifests \
-  --train-per-class 2500 \
-  --validation-per-class 500 \
-  --test-per-class 500 \
+  --train-per-class 1250 \
+  --validation-per-class 250 \
+  --test-per-class 250 \
+  --sampling-pool-per-class 1500 \
   --seed 42
 ```
+
+Generate the manifests once and reuse the exact same files for every model. Do not regenerate them between M1 and M3.
 
 Expected outputs:
 
@@ -714,6 +717,17 @@ checkpoints/M1_corrected_baseline.meta.json
 results/baseline/M1_clean_metrics.csv
 results/training/M1_history.csv
 ```
+
+### Deadline submission path — train the proposed M3 model
+
+When compute permits only one robust model beyond M1, train **M3** directly from the saved M1 checkpoint:
+
+```bash
+python -m training.train_pairwise \
+  --config configs/M3_pairwise.yaml
+```
+
+This is the recommended submission comparison: **M1 clean baseline vs M3 complete pairwise robustness method**. M2 and M4 below remain optional ablations.
 
 ### Step 4 — Train M2 robustness fine-tuning model
 
@@ -851,7 +865,76 @@ An explicit run tag can also be supplied with `--run-tag selected_final`.
 
 ---
 
-## 15. Run the Test Suite
+## 15. Build Submission Artifacts
+
+After evaluating M1 and M3 on `sid_test.csv`, aggregate the real result files:
+
+```bash
+python -m evaluation.build_submission_results --models M1 M3
+```
+
+This writes:
+
+```text
+results/evaluation/model_comparison.csv
+results/evaluation/condition_comparison.csv
+```
+
+Generate compact robustness figures:
+
+```bash
+python -m evaluation.plot_submission_results
+```
+
+Expected figures:
+
+```text
+figures/clean_vs_robust.png
+figures/condition_auc_comparison.png
+```
+
+Extract representative false positives, false negatives, and transformation-instability cases from M3 raw predictions:
+
+```bash
+python -m evaluation.error_analysis \
+  --predictions results/predictions/M3/M3_pairwise/SID_internal_test_robustness.csv \
+  --manifest data/manifests/sid_test.csv \
+  --top-k 5
+```
+
+This produces a `cases.csv` plus clean/transformed image assets under `results/error_analysis/M3/`.
+
+### Required directory-to-JSON inference
+
+The hackathon-facing inference entry point is `inference.py`. It does not use labels or manifests. It loads the selected checkpoint and emits canonical `P(AI-generated)` scores:
+
+```bash
+python inference.py \
+  --input ./images \
+  --model-id M3 \
+  --checkpoint checkpoints/M3_pairwise.pth \
+  --output predictions.json
+```
+
+Output schema:
+
+```json
+[
+  {"image_path": "images/example.jpg", "pred": 0.9321}
+]
+```
+
+### Real Streamlit demo
+
+```bash
+streamlit run frontend/app.py
+```
+
+The dashboard never fabricates metrics or predictions. Missing evaluation files are shown as missing, and the live inference tab uses the actual checkpoint.
+
+---
+
+## 16. Run the Test Suite
 
 ```bash
 python -m pytest -q
@@ -951,7 +1034,7 @@ It should **not** be described as an exact reproduction of any winning method.
 
 ---
 
-## 18. Current Scope and Planned Extensions
+## 19. Current Scope and Planned Extensions
 
 ### Core implemented scope
 
@@ -974,10 +1057,12 @@ It should **not** be described as an exact reproduction of any winning method.
 
 ### Before final submission
 
-- [ ] run and populate the full M0–M4 controlled result table;
-- [ ] perform representative false-positive / false-negative analysis;
-- [ ] produce final robustness figures;
-- [ ] implement the required directory-to-JSON inference entry point (`image_path`, `pred`);
+- [ ] finish and evaluate the submission-critical **M1 vs M3** comparison;
+- [ ] run `evaluation.build_submission_results` and populate the README/Devpost with verified metrics;
+- [ ] run `evaluation.error_analysis` and select representative false-positive / false-negative cases;
+- [ ] generate the final robustness figures;
+- [x] implement the required directory-to-JSON inference entry point (`image_path`, `pred`);
+- [x] remove mock/random frontend metrics and connect live inference to the actual checkpoint;
 - [ ] finalize external checkpoint hosting/reproduction instructions;
 - [ ] update team-member contribution names;
 - [ ] polish the end-to-end demo and Devpost submission.
@@ -998,7 +1083,7 @@ The team intentionally prioritizes a defensible controlled experiment over archi
 
 ---
 
-## 19. Team Workstreams
+## 20. Team Workstreams
 
 The project is designed for parallel development with stable interfaces.
 
@@ -1013,7 +1098,7 @@ Replace the workstream descriptions with member names before final Devpost submi
 
 ---
 
-## 20. Scientific Claiming Rules
+## 21. Scientific Claiming Rules
 
 To keep the final presentation defensible:
 
@@ -1029,20 +1114,19 @@ To keep the final presentation defensible:
 
 ---
 
-## 21. Final Goal
+## 22. Final Goal
 
-The project is successful if it can demonstrate, with controlled evidence, that:
+The submission-critical question is deliberately simple:
 
 ```text
-M1 → M2
-a dedicated clean/corrupt robustness fine-tuning stage improves transformed-image performance
-
-M2 → M3
-explicit clean/corrupt consistency adds robustness beyond augmentation alone
-
-M3 → M4
-progressive difficulty exposure provides additional robustness or better worst-case behavior
+M1 — clean-only DINOv2 detector
+        ↓
+M3 — clean/corrupt paired training + prediction consistency + representation consistency
 ```
+
+If M3 improves pooled or worst-case transformed-image performance while preserving useful clean discrimination, the project demonstrates that **explicit transformation-aware pairwise training can make an already-strong clean detector more robust to real-world redistribution**.
+
+Because the deadline experiment may omit M2 and M4, the submission must not claim that the improvement is caused by any one component in isolation. Separating augmentation, consistency losses, and curriculum remains a follow-up ablation.
 
 The intended final story is:
 

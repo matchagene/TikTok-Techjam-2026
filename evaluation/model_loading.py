@@ -29,6 +29,7 @@ def build_model_for_id(
     model_id: str,
     *,
     model_name: str = "vit_base_patch14_dinov2.lvd142m",
+    pretrained: bool = True,
 ) -> nn.Module:
     """Construct the architecture associated with a ladder model ID."""
 
@@ -36,11 +37,19 @@ def build_model_for_id(
         # Lazy import avoids requiring timm in unit-test-only environments.
         from models.baseline import DINOBaseline
 
-        return DINOBaseline(model_name=model_name, freeze_backbone=True)
+        return DINOBaseline(
+            model_name=model_name,
+            freeze_backbone=True,
+            pretrained=pretrained,
+        )
     if model_id in {"M2", "M3", "M4"}:
         from models.robust_detector import RobustDINODetector
 
-        return RobustDINODetector(model_name=model_name, freeze_backbone=True)
+        return RobustDINODetector(
+            model_name=model_name,
+            freeze_backbone=True,
+            pretrained=pretrained,
+        )
     raise ValueError("model_id must be one of M0, M1, M2, M3, M4")
 
 
@@ -53,7 +62,9 @@ def load_adapter(
 ) -> ModelAdapter:
     """Load a strict checkpoint and return the canonical P(fake) adapter."""
 
-    model = build_model_for_id(model_id, model_name=model_name)
+    # Checkpoints contain the full backbone state. Avoid a network download
+    # during evaluation/inference by constructing the architecture uninitialized.
+    model = build_model_for_id(model_id, model_name=model_name, pretrained=False)
     state = _load_state_dict(Path(checkpoint))
     try:
         model.load_state_dict(state, strict=True)
