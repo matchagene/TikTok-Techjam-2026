@@ -1,0 +1,2 @@
+clean_auc,accuracy,precision,recall,f1,n_real,n_fake,best_epoch
+0.99448,0.96,0.9356060606060606,0.988,0.9610894941634242,250,250,4
